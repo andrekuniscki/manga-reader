@@ -53,6 +53,7 @@
     darkMode: true,
     fitWidth: true,
     hudHidden: false,
+    autoFullscreen: false,
   };
 
   function getSettings() {
@@ -235,6 +236,7 @@
             <button class="mr-btn mr-zoom-in" title="Aumentar zoom">+</button>
             <button class="mr-btn mr-dark" title="Alternar tema"></button>
             <button class="mr-btn mr-fullscreen" title="Tela cheia">⛶</button>
+            <button class="mr-btn mr-auto-fullscreen" title="Entrar em tela cheia automaticamente ao abrir/trocar de capítulo">⛶ Auto</button>
             <button class="mr-btn mr-close" title="Fechar">✕</button>
           </div>
         </header>
@@ -244,11 +246,11 @@
           <div class="mr-click-right" title="Próxima página"></div>
         </div>
         <footer class="mr-bottombar">
-          <button class="mr-btn mr-prev-chapter">← Cap. anterior</button>
+          <button class="mr-btn mr-prev-chapter">Cap. anterior</button>
           <button class="mr-btn mr-prev-page">‹</button>
           <input type="range" class="mr-slider" min="0" value="0" step="1" />
           <button class="mr-btn mr-next-page">›</button>
-          <button class="mr-btn mr-next-chapter">Próximo cap. →</button>
+          <button class="mr-btn mr-next-chapter">Próximo cap.</button>
         </footer>
       </div>
     `;
@@ -263,7 +265,7 @@
     .mr-topbar, .mr-bottombar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-wrap: wrap; }
     .mr-dark-theme .mr-topbar, .mr-dark-theme .mr-bottombar { background: #17171d; border-color: #2a2a33; }
     .mr-light-theme .mr-topbar, .mr-light-theme .mr-bottombar { background: #ffffff; border-color: #e2e2e6; }
-    .mr-topbar { border-bottom: 1px solid; justify-content: space-between; }
+    .mr-topbar { border-bottom: 1px solid; justify-content: space-between; padding-right: 58px; }
     .mr-bottombar { border-top: 1px solid; }
     .mr-title-block { display: flex; flex-direction: column; min-width: 0; }
     .mr-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 38vw; }
@@ -273,6 +275,7 @@
     .mr-btn:hover { background: rgba(127,127,127,0.3); }
     .mr-btn:disabled { opacity: 0.35; cursor: default; }
     .mr-btn.mr-active { background: #4f7cff; color: white; }
+    .mr-prev-chapter, .mr-next-chapter { text-align: center; }
     .mr-zoom-label { font-size: 11px; min-width: 36px; text-align: center; opacity: 0.8; }
     .mr-stage-wrap { position: relative; flex: 1; display: flex; overflow: hidden; }
     .mr-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
@@ -292,13 +295,12 @@
     .mr-hud-toggle {
       position: absolute; top: 12px; right: 14px; z-index: 10;
       width: 40px; height: 40px; border-radius: 50%;
-      border: 1px solid rgba(127,127,127,0.35);
-      background: rgba(30,30,36,0.55); backdrop-filter: blur(4px);
+      border: none; background: transparent;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; padding: 0; touch-action: manipulation;
+      opacity: 0.85; transition: opacity 0.15s, transform 0.15s;
     }
-    .mr-light-theme .mr-hud-toggle { background: rgba(255,255,255,0.75); }
-    .mr-hud-toggle:hover { background: rgba(79,124,255,0.85); }
+    .mr-hud-toggle:hover { opacity: 1; transform: scale(1.08); background: transparent; }
     .mr-hud-icon { width: 20px; height: 20px; display: block; pointer-events: none; }
     .mr-dark-theme .mr-hud-icon { filter: invert(1); }
     .mr-hud-hidden .mr-topbar,
@@ -341,6 +343,7 @@
       zoomInBtn: shadow.querySelector(".mr-zoom-in"),
       zoomLabel: shadow.querySelector(".mr-zoom-label"),
       fullscreenBtn: shadow.querySelector(".mr-fullscreen"),
+      autoFullscreenBtn: shadow.querySelector(".mr-auto-fullscreen"),
       closeBtn: shadow.querySelector(".mr-close"),
       leftClickZone: shadow.querySelector(".mr-click-left"),
       rightClickZone: shadow.querySelector(".mr-click-right"),
@@ -367,6 +370,10 @@
       els.rtlBtn.classList.toggle("mr-active", settings.rtl);
       els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
+      els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
+      els.autoFullscreenBtn.title = settings.autoFullscreen
+        ? "Tela cheia automática: ativada (clique para desativar)"
+        : "Tela cheia automática: desativada (clique para ativar)";
       els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
       els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
       els.hudIcon.src = settings.hudHidden ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
@@ -580,7 +587,22 @@
       persistSettings();
     }
 
+    function tryEnterFullscreen() {
+      if (document.fullscreenElement) return;
+      // Best-effort: browsers require a user gesture for the Fullscreen API,
+      // and Tampermonkey has no window-level fullscreen API to fall back on
+      // (unlike the desktop extension), so this can silently fail right
+      // after a chapter change. The toolbar button always works manually.
+      host.requestFullscreen?.().catch(() => {});
+    }
+
     els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+    els.autoFullscreenBtn.addEventListener("click", () => {
+      settings.autoFullscreen = !settings.autoFullscreen;
+      applySettingsToDom();
+      persistSettings();
+      if (settings.autoFullscreen) tryEnterFullscreen();
+    });
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
 
@@ -592,6 +614,7 @@
 
     applySettingsToDom();
     render();
+    if (settings.autoFullscreen) tryEnterFullscreen();
   }
 
   /* ------------------------------------------------------------------ *

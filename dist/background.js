@@ -1052,6 +1052,20 @@
       await import_webextension_polyfill.default.tabs.update(tabId, { url: msg.url });
       return;
     }
+    if (msg?.type === "TOGGLE_WINDOW_FULLSCREEN") {
+      const windowId = sender.tab?.windowId;
+      if (windowId === void 0) return;
+      const win = await import_webextension_polyfill.default.windows.get(windowId);
+      const next = win.state === "fullscreen" ? "normal" : "fullscreen";
+      await import_webextension_polyfill.default.windows.update(windowId, { state: next });
+      return;
+    }
+    if (msg?.type === "SET_WINDOW_FULLSCREEN") {
+      const windowId = sender.tab?.windowId;
+      if (windowId === void 0) return;
+      await import_webextension_polyfill.default.windows.update(windowId, { state: msg.enabled ? "fullscreen" : "normal" });
+      return;
+    }
   });
 })();
 //# sourceMappingURL=background.js.map

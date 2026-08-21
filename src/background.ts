@@ -3,7 +3,9 @@ import browser from "webextension-polyfill";
 type BgMessage =
   | { type: "ACTIVATE_CURRENT_TAB" }
   | { type: "OPEN_URL_IN_READER"; url: string }
-  | { type: "NAVIGATE_CHAPTER"; url: string };
+  | { type: "NAVIGATE_CHAPTER"; url: string }
+  | { type: "TOGGLE_WINDOW_FULLSCREEN" }
+  | { type: "SET_WINDOW_FULLSCREEN"; enabled: boolean };
 
 // Tabs that should have the reader auto-reopened as soon as their current
 // navigation finishes loading (used for "open URL" and chapter-to-chapter
@@ -55,6 +57,26 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender) => {
     if (tabId === undefined) return;
     pendingAutoActivate.add(tabId);
     await browser.tabs.update(tabId, { url: msg.url });
+    return;
+  }
+
+  if (msg?.type === "TOGGLE_WINDOW_FULLSCREEN") {
+    // Real browser-window fullscreen (same as pressing F11) rather than the
+    // page-level Fullscreen API: it's a window state, so — unlike
+    // element.requestFullscreen() — it survives page navigation, which is
+    // exactly what makes chapter-to-chapter reading stay fullscreen.
+    const windowId = sender.tab?.windowId;
+    if (windowId === undefined) return;
+    const win = await browser.windows.get(windowId);
+    const next = win.state === "fullscreen" ? "normal" : "fullscreen";
+    await browser.windows.update(windowId, { state: next });
+    return;
+  }
+
+  if (msg?.type === "SET_WINDOW_FULLSCREEN") {
+    const windowId = sender.tab?.windowId;
+    if (windowId === undefined) return;
+    await browser.windows.update(windowId, { state: msg.enabled ? "fullscreen" : "normal" });
     return;
   }
 });

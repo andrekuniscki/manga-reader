@@ -1160,7 +1160,8 @@
     rtl: false,
     darkMode: true,
     fitWidth: true,
-    hudHidden: false
+    hudHidden: false,
+    autoFullscreen: false
   };
   async function getSettings() {
     const stored = await import_webextension_polyfill.default.storage.local.get(SETTINGS_KEY);
@@ -1219,6 +1220,7 @@
       zoomInBtn: shadow.querySelector(".mr-zoom-in"),
       zoomLabel: shadow.querySelector(".mr-zoom-label"),
       fullscreenBtn: shadow.querySelector(".mr-fullscreen"),
+      autoFullscreenBtn: shadow.querySelector(".mr-auto-fullscreen"),
       closeBtn: shadow.querySelector(".mr-close"),
       leftClickZone: shadow.querySelector(".mr-click-left"),
       rightClickZone: shadow.querySelector(".mr-click-right"),
@@ -1253,6 +1255,8 @@
       els.darkBtn.textContent = settings.darkMode ? "\u{1F319}" : "\u2600\uFE0F";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
       els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
+      els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
+      els.autoFullscreenBtn.title = settings.autoFullscreen ? "Tela cheia autom\xE1tica: ativada (clique para desativar)" : "Tela cheia autom\xE1tica: desativada (clique para ativar)";
       els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
       els.hudIcon.src = settings.hudHidden ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
       els.hudToggleBtn.title = settings.hudHidden ? "Mostrar controles (H)" : "Ocultar controles (H)";
@@ -1402,6 +1406,10 @@
       }
     }
     function toggleFullscreen() {
+      if (options.onToggleFullscreen) {
+        options.onToggleFullscreen();
+        return;
+      }
       if (!document.fullscreenElement) {
         host.requestFullscreen?.().catch(() => void 0);
       } else {
@@ -1446,14 +1454,29 @@
       persistSettings();
     }
     els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+    els.autoFullscreenBtn.addEventListener("click", () => {
+      settings.autoFullscreen = !settings.autoFullscreen;
+      applySettingsToDom();
+      persistSettings();
+      if (settings.autoFullscreen) tryEnterFullscreen();
+    });
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
+    function tryEnterFullscreen() {
+      if (options.onEnsureFullscreen) {
+        options.onEnsureFullscreen();
+        return;
+      }
+      if (document.fullscreenElement) return;
+      host.requestFullscreen?.().catch(() => void 0);
+    }
     function toggleHud() {
       settings.hudHidden = !settings.hudHidden;
       applySettingsToDom();
       persistSettings();
     }
     render();
+    if (settings.autoFullscreen) tryEnterFullscreen();
   }
   function clamp(n, min, max) {
     return Math.min(max, Math.max(min, n));
@@ -1479,6 +1502,7 @@
           <button class="mr-btn mr-zoom-in" title="Aumentar zoom">+</button>
           <button class="mr-btn mr-dark" title="Alternar tema"></button>
           <button class="mr-btn mr-fullscreen" title="Tela cheia (F)">\u26F6</button>
+          <button class="mr-btn mr-auto-fullscreen" title="Entrar em tela cheia automaticamente ao abrir/trocar de cap\xEDtulo">\u26F6 Auto</button>
           <button class="mr-btn mr-close" title="Fechar (Esc)">\u2715</button>
         </div>
       </header>
@@ -1490,11 +1514,11 @@
       </div>
 
       <footer class="mr-bottombar">
-        <button class="mr-btn mr-prev-chapter">\u2190 Cap\xEDtulo anterior</button>
+        <button class="mr-btn mr-prev-chapter">Cap\xEDtulo anterior</button>
         <button class="mr-btn mr-prev-page">\u2039</button>
         <input type="range" class="mr-slider" min="0" value="0" step="1" />
         <button class="mr-btn mr-next-page">\u203A</button>
-        <button class="mr-btn mr-next-chapter">Pr\xF3ximo cap\xEDtulo \u2192</button>
+        <button class="mr-btn mr-next-chapter">Pr\xF3ximo cap\xEDtulo</button>
       </footer>
     </div>
   `;
@@ -1516,7 +1540,7 @@
 }
 .mr-dark-theme .mr-topbar, .mr-dark-theme .mr-bottombar { background: #17171d; border-color: #2a2a33; }
 .mr-light-theme .mr-topbar, .mr-light-theme .mr-bottombar { background: #ffffff; border-color: #e2e2e6; }
-.mr-topbar { border-bottom: 1px solid; justify-content: space-between; }
+.mr-topbar { border-bottom: 1px solid; justify-content: space-between; padding-right: 58px; }
 .mr-bottombar { border-top: 1px solid; }
 
 .mr-title-block { display: flex; flex-direction: column; min-width: 0; }
@@ -1533,6 +1557,8 @@
 .mr-btn:disabled { opacity: 0.35; cursor: default; }
 .mr-btn.mr-active { background: #4f7cff; color: white; }
 .mr-zoom-label { font-size: 12px; min-width: 40px; text-align: center; opacity: 0.8; }
+
+.mr-prev-chapter, .mr-next-chapter { text-align: center; }
 
 .mr-stage-wrap { position: relative; flex: 1; display: flex; overflow: hidden; }
 .mr-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; }
@@ -1564,14 +1590,12 @@
 .mr-hud-toggle {
   position: absolute; top: 12px; right: 14px; z-index: 10;
   width: 36px; height: 36px; border-radius: 50%;
-  border: 1px solid rgba(127,127,127,0.35);
-  background: rgba(30,30,36,0.55); backdrop-filter: blur(4px);
+  border: none; background: transparent;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0;
+  cursor: pointer; padding: 0; opacity: 0.85; transition: opacity 0.15s, transform 0.15s;
 }
-.mr-light-theme .mr-hud-toggle { background: rgba(255,255,255,0.75); }
-.mr-hud-toggle:hover { background: rgba(79,124,255,0.85); }
-.mr-hud-icon { width: 18px; height: 18px; display: block; pointer-events: none; }
+.mr-hud-toggle:hover { opacity: 1; transform: scale(1.08); background: transparent; }
+.mr-hud-icon { width: 20px; height: 20px; display: block; pointer-events: none; }
 .mr-dark-theme .mr-hud-icon { filter: invert(1); }
 
 .mr-hud-hidden .mr-topbar,
@@ -1592,6 +1616,12 @@
         import_webextension_polyfill2.default.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
           window.location.href = url;
         });
+      },
+      onToggleFullscreen: () => {
+        import_webextension_polyfill2.default.runtime.sendMessage({ type: "TOGGLE_WINDOW_FULLSCREEN" }).catch(() => void 0);
+      },
+      onEnsureFullscreen: () => {
+        import_webextension_polyfill2.default.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled: true }).catch(() => void 0);
       }
     });
   }

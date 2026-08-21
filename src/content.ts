@@ -22,6 +22,14 @@ async function handleActivate() {
         window.location.href = url; // fallback if messaging fails for any reason
       });
     },
+    onToggleFullscreen: () => {
+      // Real browser-window fullscreen (background.ts), not the page-level
+      // Fullscreen API — it survives chapter navigation automatically.
+      browser.runtime.sendMessage({ type: "TOGGLE_WINDOW_FULLSCREEN" }).catch(() => void 0);
+    },
+    onEnsureFullscreen: () => {
+      browser.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled: true }).catch(() => void 0);
+    },
   });
 }
 
