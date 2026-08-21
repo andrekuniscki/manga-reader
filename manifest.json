@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Manga Reader",
+  "version": "0.1.0",
+  "description": "Cole o link de um capítulo de mangá e leia num modo de leitura decente, com navegação entre páginas e capítulos.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "scripts": ["dist/background.js"]
+  },
+  "permissions": ["storage", "scripting", "activeTab", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "manga-reader@local.extension",
+      "strict_min_version": "115.0"
+    }
+  }
+}
