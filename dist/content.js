@@ -1243,9 +1243,11 @@
       els.root.classList.toggle("mr-dark-theme", settings.darkMode);
       els.root.classList.toggle("mr-light-theme", !settings.darkMode);
       els.root.classList.toggle("mr-continuous", settings.mode === "continuous");
+      els.root.classList.toggle("mr-double", settings.mode === "double");
+      els.root.classList.toggle("mr-rtl-active", settings.rtl);
       els.root.classList.toggle("mr-fit-width", settings.fitWidth);
       els.root.style.setProperty("--mr-zoom", String(settings.zoom));
-      els.modeBtn.textContent = settings.mode === "single" ? "\u{1F4D6} P\xE1gina \xFAnica" : "\u{1F4DC} Cont\xEDnuo";
+      els.modeBtn.textContent = settings.mode === "single" ? "\u{1F4D6} 1 p\xE1g." : settings.mode === "double" ? "\u{1F4D6} 2 p\xE1gs." : "\u{1F4DC} Cont\xEDnuo";
       els.rtlBtn.textContent = settings.rtl ? "\u25C0 RTL" : "\u25B6 LTR";
       els.rtlBtn.classList.toggle("mr-active", settings.rtl);
       els.darkBtn.textContent = settings.darkMode ? "\u{1F319}" : "\u2600\uFE0F";
@@ -1258,7 +1260,15 @@
     function persistSettings() {
       saveSettings(settings).catch(() => void 0);
     }
+    function getSpreadStart(page) {
+      return page - page % 2;
+    }
+    let continuousObserver = null;
     function renderSinglePage() {
+      if (continuousObserver) {
+        continuousObserver.disconnect();
+        continuousObserver = null;
+      }
       els.stage.innerHTML = "";
       const img = document.createElement("img");
       img.className = "mr-page-img";
@@ -1269,6 +1279,26 @@
       els.slider.value = String(currentPage);
       preloadAround(currentPage);
       saveProgress(chapter.chapterKey, currentPage).catch(() => void 0);
+    }
+    function renderDoublePage() {
+      if (continuousObserver) {
+        continuousObserver.disconnect();
+        continuousObserver = null;
+      }
+      els.stage.innerHTML = "";
+      const start = getSpreadStart(currentPage);
+      const end = Math.min(start + 1, chapter.images.length - 1);
+      for (let i = start; i <= end; i++) {
+        const img = document.createElement("img");
+        img.className = "mr-page-img";
+        img.src = chapter.images[i];
+        img.alt = `P\xE1gina ${i + 1}`;
+        els.stage.appendChild(img);
+      }
+      els.pageInfo.textContent = start === end ? `${start + 1} / ${chapter.images.length}` : `${start + 1}-${end + 1} / ${chapter.images.length}`;
+      els.slider.value = String(currentPage);
+      preloadAround(start);
+      saveProgress(chapter.chapterKey, start);
     }
     function renderContinuous() {
       els.stage.innerHTML = "";
@@ -1283,7 +1313,7 @@
       els.pageInfo.textContent = `${currentPage + 1} / ${chapter.images.length}`;
       els.slider.value = String(currentPage);
       preloadAround(currentPage);
-      const observer = new IntersectionObserver(
+      continuousObserver = new IntersectionObserver(
         (entries) => {
           const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
           if (!visible) return;
@@ -1298,7 +1328,7 @@
         },
         { root: els.stage, threshold: [0.5] }
       );
-      shadow.querySelectorAll(".mr-continuous-img").forEach((el) => observer.observe(el));
+      shadow.querySelectorAll(".mr-continuous-img").forEach((el) => continuousObserver.observe(el));
       requestAnimationFrame(() => {
         const target = shadow.querySelector(`[data-page-index="${currentPage}"]`);
         target?.scrollIntoView({ block: "start" });
@@ -1306,6 +1336,7 @@
     }
     function render() {
       if (settings.mode === "single") renderSinglePage();
+      else if (settings.mode === "double") renderDoublePage();
       else renderContinuous();
     }
     function goToPage(page) {
@@ -1313,6 +1344,16 @@
       render();
     }
     function nextPage() {
+      if (settings.mode === "double") {
+        const nextStart = getSpreadStart(currentPage) + 2;
+        if (nextStart < chapter.images.length) {
+          currentPage = nextStart;
+          render();
+        } else if (chapter.nextChapterUrl) {
+          navigateToChapter(chapter.nextChapterUrl);
+        }
+        return;
+      }
       if (currentPage < chapter.images.length - 1) {
         goToPage(currentPage + 1);
       } else if (chapter.nextChapterUrl) {
@@ -1320,6 +1361,16 @@
       }
     }
     function prevPage() {
+      if (settings.mode === "double") {
+        const prevStart = getSpreadStart(currentPage) - 2;
+        if (prevStart >= 0) {
+          currentPage = prevStart;
+          render();
+        } else if (chapter.prevChapterUrl) {
+          navigateToChapter(chapter.prevChapterUrl, true);
+        }
+        return;
+      }
       if (currentPage > 0) {
         goToPage(currentPage - 1);
       } else if (chapter.prevChapterUrl) {
@@ -1332,13 +1383,14 @@
     }
     function closeReader() {
       document.removeEventListener("keydown", onKeyDown);
+      if (continuousObserver) continuousObserver.disconnect();
       host.remove();
     }
     function onKeyDown(e) {
       if (e.key === "Escape") return closeReader();
       if (e.key === "f" || e.key === "F") return toggleFullscreen();
       if (e.key === "h" || e.key === "H") return toggleHud();
-      if (settings.mode !== "single") return;
+      if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
       const goBack = settings.rtl ? "ArrowRight" : "ArrowLeft";
       if (e.key === goForward || e.key === " ") {
@@ -1365,7 +1417,8 @@
     els.prevChapterBtn.addEventListener("click", () => chapter.prevChapterUrl && navigateToChapter(chapter.prevChapterUrl, true));
     els.nextChapterBtn.addEventListener("click", () => chapter.nextChapterUrl && navigateToChapter(chapter.nextChapterUrl));
     els.modeBtn.addEventListener("click", () => {
-      settings.mode = settings.mode === "single" ? "continuous" : "single";
+      settings.mode = settings.mode === "single" ? "double" : settings.mode === "double" ? "continuous" : "single";
+      if (settings.mode === "double") currentPage = getSpreadStart(currentPage);
       applySettingsToDom();
       persistSettings();
       render();
@@ -1484,6 +1537,8 @@
 .mr-stage-wrap { position: relative; flex: 1; display: flex; overflow: hidden; }
 .mr-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; }
 .mr-continuous .mr-stage { gap: 4px; }
+.mr-double .mr-stage { flex-direction: row; gap: 6px; }
+.mr-double.mr-rtl-active .mr-stage { flex-direction: row-reverse; }
 
 .mr-page-img {
   max-width: calc(100% * var(--mr-zoom));
@@ -1493,6 +1548,8 @@
   user-select: none;
 }
 .mr-root:not(.mr-fit-width) .mr-page-img { max-width: none; width: calc(60% * var(--mr-zoom)); }
+.mr-double .mr-page-img { max-width: calc(48% * var(--mr-zoom)); width: auto; }
+.mr-root:not(.mr-fit-width).mr-double .mr-page-img { max-width: none; width: calc(30% * var(--mr-zoom)); }
 .mr-root:not(.mr-continuous) .mr-stage { justify-content: center; }
 .mr-root:not(.mr-continuous) .mr-page-img { margin: auto; }
 

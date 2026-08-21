@@ -1,7 +1,7 @@
 import browser from "webextension-polyfill";
 
 export interface ReaderSettings {
-  mode: "single" | "continuous";
+  mode: "single" | "double" | "continuous";
   zoom: number; // 0.5 - 2.5
   rtl: boolean;
   darkMode: boolean;

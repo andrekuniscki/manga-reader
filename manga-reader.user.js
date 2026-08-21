@@ -47,7 +47,7 @@
   const PROGRESS_PREFIX = "manga-reader:progress:";
 
   const DEFAULT_SETTINGS = {
-    mode: "single", // "single" | "continuous"
+    mode: "single", // "single" | "double" | "continuous"
     zoom: 1,
     rtl: false,
     darkMode: true,
@@ -277,8 +277,12 @@
     .mr-stage-wrap { position: relative; flex: 1; display: flex; overflow: hidden; }
     .mr-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
     .mr-continuous .mr-stage { gap: 4px; }
+    .mr-double .mr-stage { flex-direction: row; gap: 6px; }
+    .mr-double.mr-rtl-active .mr-stage { flex-direction: row-reverse; }
     .mr-page-img { max-width: calc(100% * var(--mr-zoom)); height: auto; display: block; margin: 0 auto; user-select: none; -webkit-user-select: none; }
     .mr-root:not(.mr-fit-width) .mr-page-img { max-width: none; width: calc(60% * var(--mr-zoom)); }
+    .mr-double .mr-page-img { max-width: calc(48% * var(--mr-zoom)); width: auto; }
+    .mr-root:not(.mr-fit-width).mr-double .mr-page-img { max-width: none; width: calc(30% * var(--mr-zoom)); }
     .mr-root:not(.mr-continuous) .mr-stage { justify-content: center; }
     .mr-root:not(.mr-continuous) .mr-page-img { margin: auto; }
     .mr-click-left, .mr-click-right { position: absolute; top: 0; bottom: 0; width: 16%; z-index: 2; }
@@ -353,9 +357,12 @@
       els.root.classList.toggle("mr-dark-theme", settings.darkMode);
       els.root.classList.toggle("mr-light-theme", !settings.darkMode);
       els.root.classList.toggle("mr-continuous", settings.mode === "continuous");
+      els.root.classList.toggle("mr-double", settings.mode === "double");
+      els.root.classList.toggle("mr-rtl-active", settings.rtl);
       els.root.classList.toggle("mr-fit-width", settings.fitWidth);
       els.root.style.setProperty("--mr-zoom", String(settings.zoom));
-      els.modeBtn.textContent = settings.mode === "single" ? "📖" : "📜";
+      els.modeBtn.textContent =
+        settings.mode === "single" ? "📖 1 pág." : settings.mode === "double" ? "📖 2 págs." : "📜 Contínuo";
       els.rtlBtn.textContent = settings.rtl ? "◀ RTL" : "▶ LTR";
       els.rtlBtn.classList.toggle("mr-active", settings.rtl);
       els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
@@ -384,6 +391,10 @@
 
     let observer = null;
 
+    function getSpreadStart(page) {
+      return page - (page % 2);
+    }
+
     function renderSinglePage() {
       if (observer) { observer.disconnect(); observer = null; }
       els.stage.innerHTML = "";
@@ -396,6 +407,27 @@
       els.slider.value = String(currentPage);
       preloadAround(currentPage);
       saveProgress(chapter.chapterKey, currentPage);
+    }
+
+    function renderDoublePage() {
+      if (observer) { observer.disconnect(); observer = null; }
+      els.stage.innerHTML = "";
+      const start = getSpreadStart(currentPage);
+      const end = Math.min(start + 1, chapter.images.length - 1);
+
+      for (let i = start; i <= end; i++) {
+        const img = document.createElement("img");
+        img.className = "mr-page-img";
+        img.src = chapter.images[i];
+        img.alt = `Página ${i + 1}`;
+        els.stage.appendChild(img);
+      }
+
+      els.pageInfo.textContent =
+        start === end ? `${start + 1} / ${chapter.images.length}` : `${start + 1}-${end + 1} / ${chapter.images.length}`;
+      els.slider.value = String(currentPage);
+      preloadAround(start);
+      saveProgress(chapter.chapterKey, start);
     }
 
     function renderContinuous() {
@@ -439,6 +471,7 @@
 
     function render() {
       if (settings.mode === "single") renderSinglePage();
+      else if (settings.mode === "double") renderDoublePage();
       else renderContinuous();
     }
 
@@ -448,11 +481,31 @@
     }
 
     function nextPage() {
+      if (settings.mode === "double") {
+        const nextStart = getSpreadStart(currentPage) + 2;
+        if (nextStart < chapter.images.length) {
+          currentPage = nextStart;
+          render();
+        } else if (chapter.nextChapterUrl) {
+          navigateToChapter(chapter.nextChapterUrl);
+        }
+        return;
+      }
       if (currentPage < chapter.images.length - 1) goToPage(currentPage + 1);
       else if (chapter.nextChapterUrl) navigateToChapter(chapter.nextChapterUrl);
     }
 
     function prevPage() {
+      if (settings.mode === "double") {
+        const prevStart = getSpreadStart(currentPage) - 2;
+        if (prevStart >= 0) {
+          currentPage = prevStart;
+          render();
+        } else if (chapter.prevChapterUrl) {
+          navigateToChapter(chapter.prevChapterUrl);
+        }
+        return;
+      }
       if (currentPage > 0) goToPage(currentPage - 1);
       else if (chapter.prevChapterUrl) navigateToChapter(chapter.prevChapterUrl);
     }
@@ -471,7 +524,7 @@
       if (e.key === "Escape") return closeReader();
       if (e.key === "f" || e.key === "F") return toggleFullscreen();
       if (e.key === "h" || e.key === "H") return toggleHud();
-      if (settings.mode !== "single") return;
+      if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
       const goBack = settings.rtl ? "ArrowRight" : "ArrowLeft";
       if (e.key === goForward || e.key === " ") {
@@ -498,7 +551,8 @@
     els.nextChapterBtn.addEventListener("click", () => chapter.nextChapterUrl && navigateToChapter(chapter.nextChapterUrl));
 
     els.modeBtn.addEventListener("click", () => {
-      settings.mode = settings.mode === "single" ? "continuous" : "single";
+      settings.mode = settings.mode === "single" ? "double" : settings.mode === "double" ? "continuous" : "single";
+      if (settings.mode === "double") currentPage = getSpreadStart(currentPage);
       applySettingsToDom();
       persistSettings();
       render();
