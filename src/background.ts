@@ -3,9 +3,7 @@ import browser from "webextension-polyfill";
 type BgMessage =
   | { type: "ACTIVATE_CURRENT_TAB" }
   | { type: "OPEN_URL_IN_READER"; url: string }
-  | { type: "NAVIGATE_CHAPTER"; url: string }
-  | { type: "GET_WINDOW_FULLSCREEN" }
-  | { type: "SET_WINDOW_FULLSCREEN"; enabled: boolean };
+  | { type: "NAVIGATE_CHAPTER"; url: string };
 
 // Tabs that should have the reader auto-reopened as soon as their current
 // navigation finishes loading (used for "open URL" and chapter-to-chapter
@@ -30,19 +28,6 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // If a tab closes without ever reaching "complete" (e.g. user cancels a
 // navigation), don't leave a stale flag around.
 browser.tabs.onRemoved.addListener((tabId) => pendingAutoActivate.delete(tabId));
-
-// Serializes window-fullscreen updates per window so two near-simultaneous
-// requests (e.g. a duplicated click) can't race and leave the window in an
-// unexpected state — each call now waits for the previous one to finish.
-const fullscreenLocks = new Map<number, Promise<unknown>>();
-function setWindowFullscreen(windowId: number, enabled: boolean): Promise<void> {
-  const prev = fullscreenLocks.get(windowId) || Promise.resolve();
-  const next = prev
-    .catch(() => void 0)
-    .then(() => browser.windows.update(windowId, { state: enabled ? "fullscreen" : "normal" }));
-  fullscreenLocks.set(windowId, next);
-  return next.then(() => void 0);
-}
 
 browser.runtime.onMessage.addListener(async (message: unknown, sender) => {
   const msg = message as BgMessage;
@@ -70,26 +55,6 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender) => {
     if (tabId === undefined) return undefined;
     pendingAutoActivate.add(tabId);
     await browser.tabs.update(tabId, { url: msg.url });
-    return undefined;
-  }
-
-  if (msg?.type === "GET_WINDOW_FULLSCREEN") {
-    const windowId = sender.tab?.windowId;
-    if (windowId === undefined) return false;
-    const win = await browser.windows.get(windowId);
-    return win.state === "fullscreen";
-  }
-
-  if (msg?.type === "SET_WINDOW_FULLSCREEN") {
-    // Real browser-window fullscreen (same as pressing F11) rather than the
-    // page-level Fullscreen API: it's a window state, so — unlike
-    // element.requestFullscreen() — it survives page navigation, which is
-    // exactly what keeps chapter-to-chapter reading fullscreen. The caller
-    // always says explicitly what it wants (true/false) rather than asking
-    // us to "toggle", which is what let two racing calls fight each other.
-    const windowId = sender.tab?.windowId;
-    if (windowId === undefined) return undefined;
-    await setWindowFullscreen(windowId, msg.enabled);
     return undefined;
   }
 

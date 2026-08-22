@@ -7,7 +7,6 @@ export interface ReaderSettings {
   darkMode: boolean;
   fitWidth: boolean;
   hudHidden: boolean;
-  autoFullscreen: boolean;
 }
 
 export interface ChapterProgress {
@@ -25,7 +24,6 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   darkMode: true,
   fitWidth: true,
   hudHidden: false,
-  autoFullscreen: false,
 };
 
 export async function getSettings(): Promise<ReaderSettings> {

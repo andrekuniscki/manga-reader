@@ -34,19 +34,6 @@ if ((window as unknown as Record<string, boolean>)[GUARD_KEY]) {
           window.location.href = url; // fallback if messaging fails for any reason
         });
       },
-      onGetFullscreenState: async () => {
-        try {
-          const result = await browser.runtime.sendMessage({ type: "GET_WINDOW_FULLSCREEN" });
-          return Boolean(result);
-        } catch {
-          return false;
-        }
-      },
-      onSetFullscreen: (enabled) => {
-        // Real browser-window fullscreen (background.ts), not the page-level
-        // Fullscreen API — it survives chapter navigation automatically.
-        browser.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled }).catch(() => void 0);
-      },
     });
   }
 

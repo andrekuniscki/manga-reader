@@ -1160,8 +1160,7 @@
     rtl: false,
     darkMode: true,
     fitWidth: true,
-    hudHidden: false,
-    autoFullscreen: false
+    hudHidden: false
   };
   async function getSettings() {
     const stored = await import_webextension_polyfill.default.storage.local.get(SETTINGS_KEY);
@@ -1203,7 +1202,6 @@
     const settings = await getSettings();
     const savedProgress = await getProgress(chapter.chapterKey);
     let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
-    let isFullscreen = false;
     shadow.innerHTML = buildTemplate();
     const styleEl = document.createElement("style");
     styleEl.textContent = CSS;
@@ -1226,7 +1224,6 @@
       zoomInBtn: shadow.querySelector(".mr-zoom-in"),
       zoomLabel: shadow.querySelector(".mr-zoom-label"),
       fullscreenBtn: shadow.querySelector(".mr-fullscreen"),
-      autoFullscreenBtn: shadow.querySelector(".mr-auto-fullscreen"),
       closeBtn: shadow.querySelector(".mr-close"),
       leftClickZone: shadow.querySelector(".mr-click-left"),
       rightClickZone: shadow.querySelector(".mr-click-right"),
@@ -1261,10 +1258,6 @@
       els.darkBtn.textContent = settings.darkMode ? "\u{1F319}" : "\u2600\uFE0F";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
       els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
-      els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
-      els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
-      els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
-      els.autoFullscreenBtn.title = settings.autoFullscreen ? "Tela cheia autom\xE1tica: ativada (clique para desativar)" : "Tela cheia autom\xE1tica: desativada (clique para ativar)";
       els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
       els.hudIcon.src = settings.hudHidden ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
       els.hudToggleBtn.title = settings.hudHidden ? "Mostrar controles (H)" : "Ocultar controles (H)";
@@ -1395,20 +1388,15 @@
     }
     function closeReader() {
       document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
       if (continuousObserver) continuousObserver.disconnect();
       host.remove();
       if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
     }
     activeReaderCleanup = closeReader;
-    function onFullscreenChange() {
-      isFullscreen = Boolean(document.fullscreenElement);
-      applySettingsToDom();
-    }
     function onKeyDown(e) {
       if (e.repeat) return;
       if (e.key === "Escape") return closeReader();
-      if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
+      if (e.key === "f" || e.key === "F") return toggleFullscreen();
       if (e.key === "h" || e.key === "H") return toggleHud();
       if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -1421,15 +1409,12 @@
         prevPage();
       }
     }
-    function setFullscreen(enabled) {
-      isFullscreen = enabled;
-      if (options.onSetFullscreen) {
-        options.onSetFullscreen(enabled);
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        host.requestFullscreen?.().catch(() => void 0);
       } else {
-        if (enabled) host.requestFullscreen?.().catch(() => void 0);
-        else document.exitFullscreen?.().catch(() => void 0);
+        document.exitFullscreen?.().catch(() => void 0);
       }
-      applySettingsToDom();
     }
     els.closeBtn.addEventListener("click", closeReader);
     els.nextPageBtn.addEventListener("click", nextPage);
@@ -1468,28 +1453,15 @@
       applySettingsToDom();
       persistSettings();
     }
-    els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
-    els.autoFullscreenBtn.addEventListener("click", () => {
-      settings.autoFullscreen = !settings.autoFullscreen;
-      persistSettings();
-      setFullscreen(settings.autoFullscreen);
-    });
+    els.fullscreenBtn.addEventListener("click", toggleFullscreen);
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
     function toggleHud() {
       settings.hudHidden = !settings.hudHidden;
       applySettingsToDom();
       persistSettings();
     }
     render();
-    if (options.onGetFullscreenState) {
-      isFullscreen = await options.onGetFullscreenState();
-    } else {
-      isFullscreen = Boolean(document.fullscreenElement);
-    }
-    applySettingsToDom();
-    if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
   }
   function clamp(n, min, max) {
     return Math.min(max, Math.max(min, n));
@@ -1515,7 +1487,6 @@
           <button class="mr-btn mr-zoom-in" title="Aumentar zoom">+</button>
           <button class="mr-btn mr-dark" title="Alternar tema"></button>
           <button class="mr-btn mr-fullscreen" title="Tela cheia (F)">\u26F6</button>
-          <button class="mr-btn mr-auto-fullscreen" title="Entrar em tela cheia automaticamente ao abrir/trocar de cap\xEDtulo">\u26F6 Auto</button>
           <button class="mr-btn mr-close" title="Fechar (Esc)">\u2715</button>
         </div>
       </header>
@@ -1633,17 +1604,6 @@
           import_webextension_polyfill2.default.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
             window.location.href = url;
           });
-        },
-        onGetFullscreenState: async () => {
-          try {
-            const result = await import_webextension_polyfill2.default.runtime.sendMessage({ type: "GET_WINDOW_FULLSCREEN" });
-            return Boolean(result);
-          } catch {
-            return false;
-          }
-        },
-        onSetFullscreen: (enabled) => {
-          import_webextension_polyfill2.default.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled }).catch(() => void 0);
         }
       });
     }

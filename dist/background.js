@@ -1033,13 +1033,6 @@
     }
   });
   import_webextension_polyfill.default.tabs.onRemoved.addListener((tabId) => pendingAutoActivate.delete(tabId));
-  var fullscreenLocks = /* @__PURE__ */ new Map();
-  function setWindowFullscreen(windowId, enabled) {
-    const prev = fullscreenLocks.get(windowId) || Promise.resolve();
-    const next = prev.catch(() => void 0).then(() => import_webextension_polyfill.default.windows.update(windowId, { state: enabled ? "fullscreen" : "normal" }));
-    fullscreenLocks.set(windowId, next);
-    return next.then(() => void 0);
-  }
   import_webextension_polyfill.default.runtime.onMessage.addListener(async (message, sender) => {
     const msg = message;
     if (msg?.type === "ACTIVATE_CURRENT_TAB") {
@@ -1057,18 +1050,6 @@
       if (tabId === void 0) return void 0;
       pendingAutoActivate.add(tabId);
       await import_webextension_polyfill.default.tabs.update(tabId, { url: msg.url });
-      return void 0;
-    }
-    if (msg?.type === "GET_WINDOW_FULLSCREEN") {
-      const windowId = sender.tab?.windowId;
-      if (windowId === void 0) return false;
-      const win = await import_webextension_polyfill.default.windows.get(windowId);
-      return win.state === "fullscreen";
-    }
-    if (msg?.type === "SET_WINDOW_FULLSCREEN") {
-      const windowId = sender.tab?.windowId;
-      if (windowId === void 0) return void 0;
-      await setWindowFullscreen(windowId, msg.enabled);
       return void 0;
     }
     return void 0;

@@ -53,7 +53,6 @@
     darkMode: true,
     fitWidth: true,
     hudHidden: false,
-    autoFullscreen: false,
   };
 
   function getSettings() {
@@ -236,7 +235,6 @@
             <button class="mr-btn mr-zoom-in" title="Aumentar zoom">+</button>
             <button class="mr-btn mr-dark" title="Alternar tema"></button>
             <button class="mr-btn mr-fullscreen" title="Tela cheia">⛶</button>
-            <button class="mr-btn mr-auto-fullscreen" title="Entrar em tela cheia automaticamente ao abrir/trocar de capítulo">⛶ Auto</button>
             <button class="mr-btn mr-close" title="Fechar">✕</button>
           </div>
         </header>
@@ -330,7 +328,6 @@
     const settings = getSettings();
     const savedProgress = getProgress(chapter.chapterKey);
     let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
-    let isFullscreen = Boolean(document.fullscreenElement);
 
     shadow.innerHTML = buildTemplate();
     const styleEl = document.createElement("style");
@@ -355,7 +352,6 @@
       zoomInBtn: shadow.querySelector(".mr-zoom-in"),
       zoomLabel: shadow.querySelector(".mr-zoom-label"),
       fullscreenBtn: shadow.querySelector(".mr-fullscreen"),
-      autoFullscreenBtn: shadow.querySelector(".mr-auto-fullscreen"),
       closeBtn: shadow.querySelector(".mr-close"),
       leftClickZone: shadow.querySelector(".mr-click-left"),
       rightClickZone: shadow.querySelector(".mr-click-right"),
@@ -382,12 +378,6 @@
       els.rtlBtn.classList.toggle("mr-active", settings.rtl);
       els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
-      els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
-      els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
-      els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
-      els.autoFullscreenBtn.title = settings.autoFullscreen
-        ? "Tela cheia automática: ativada (clique para desativar)"
-        : "Tela cheia automática: desativada (clique para ativar)";
       els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
       els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
       els.hudIcon.src = settings.hudHidden ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
@@ -537,22 +527,16 @@
 
     function closeReader() {
       document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
       if (observer) observer.disconnect();
       host.remove();
       if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
     }
     activeReaderCleanup = closeReader;
 
-    function onFullscreenChange() {
-      isFullscreen = Boolean(document.fullscreenElement);
-      applySettingsToDom();
-    }
-
     function onKeyDown(e) {
       if (e.repeat) return; // ignore key-repeat while held
       if (e.key === "Escape") return closeReader();
-      if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
+      if (e.key === "f" || e.key === "F") return toggleFullscreen();
       if (e.key === "h" || e.key === "H") return toggleHud();
       if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -566,13 +550,12 @@
       }
     }
 
-    // Explicit target state (never "toggle, whatever that means right now")
-    // so two near-simultaneous calls converge instead of racing.
-    function setFullscreen(enabled) {
-      isFullscreen = enabled;
-      if (enabled) host.requestFullscreen?.().catch(() => {});
-      else document.exitFullscreen?.().catch(() => {});
-      applySettingsToDom();
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        host.requestFullscreen?.().catch(() => {});
+      } else {
+        document.exitFullscreen?.().catch(() => {});
+      }
     }
 
     els.closeBtn.addEventListener("click", closeReader);
@@ -614,24 +597,9 @@
       persistSettings();
     }
 
-    // Manual button: flips current fullscreen state, same as F11, without
-    // touching the "auto fullscreen" preference.
-    els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
-
-    // "Auto" button: also acts exactly like F11 immediately when clicked,
-    // but additionally remembers the choice for future chapters/opens.
-    // (On mobile there's no window-level fullscreen API, so re-entry after
-    // a chapter change may still be blocked by the browser's fullscreen
-    // permission rules — the button always works as a manual fallback.)
-    els.autoFullscreenBtn.addEventListener("click", () => {
-      settings.autoFullscreen = !settings.autoFullscreen;
-      persistSettings();
-      setFullscreen(settings.autoFullscreen);
-    });
-
+    els.fullscreenBtn.addEventListener("click", toggleFullscreen);
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
 
     function toggleHud() {
       settings.hudHidden = !settings.hudHidden;
@@ -641,7 +609,6 @@
 
     applySettingsToDom();
     render();
-    if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
   }
 
   /* ------------------------------------------------------------------ *

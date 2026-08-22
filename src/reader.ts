@@ -13,10 +13,6 @@ const EYE_CLOSED_ICON =
 export interface ReaderOptions {
   /** Called instead of window.location.href when moving to another chapter. */
   onNavigate?: (url: string) => void;
-  /** Returns whether the browser window is currently fullscreen. Falls back to Element Fullscreen state if omitted. */
-  onGetFullscreenState?: () => Promise<boolean>;
-  /** Explicitly enter (true) or exit (false) fullscreen. Falls back to Element Fullscreen if omitted. */
-  onSetFullscreen?: (enabled: boolean) => void;
 }
 
 // If the reader gets opened more than once in the same document (e.g. the
@@ -47,7 +43,6 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
   const settings = await getSettings();
   const savedProgress = await getProgress(chapter.chapterKey);
   let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
-  let isFullscreen = false;
 
   shadow.innerHTML = buildTemplate();
   const styleEl = document.createElement("style");
@@ -72,7 +67,6 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     zoomInBtn: shadow.querySelector<HTMLButtonElement>(".mr-zoom-in")!,
     zoomLabel: shadow.querySelector<HTMLDivElement>(".mr-zoom-label")!,
     fullscreenBtn: shadow.querySelector<HTMLButtonElement>(".mr-fullscreen")!,
-    autoFullscreenBtn: shadow.querySelector<HTMLButtonElement>(".mr-auto-fullscreen")!,
     closeBtn: shadow.querySelector<HTMLButtonElement>(".mr-close")!,
     leftClickZone: shadow.querySelector<HTMLDivElement>(".mr-click-left")!,
     rightClickZone: shadow.querySelector<HTMLDivElement>(".mr-click-right")!,
@@ -112,12 +106,6 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
     els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
     els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
-    els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
-    els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
-    els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
-    els.autoFullscreenBtn.title = settings.autoFullscreen
-      ? "Tela cheia automática: ativada (clique para desativar)"
-      : "Tela cheia automática: desativada (clique para ativar)";
     els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
     els.hudIcon.src = settings.hudHidden ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
     els.hudToggleBtn.title = settings.hudHidden
@@ -272,22 +260,16 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
 
   function closeReader() {
     document.removeEventListener("keydown", onKeyDown);
-    document.removeEventListener("fullscreenchange", onFullscreenChange);
     if (continuousObserver) continuousObserver.disconnect();
     host.remove();
     if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
   }
   activeReaderCleanup = closeReader;
 
-  function onFullscreenChange() {
-    isFullscreen = Boolean(document.fullscreenElement);
-    applySettingsToDom();
-  }
-
   function onKeyDown(e: KeyboardEvent) {
     if (e.repeat) return; // ignore key-repeat while held, which was firing rapid duplicate toggles
     if (e.key === "Escape") return closeReader();
-    if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
+    if (e.key === "f" || e.key === "F") return toggleFullscreen();
     if (e.key === "h" || e.key === "H") return toggleHud();
     if (settings.mode === "continuous") return; // arrow paging doesn't apply to continuous scroll
     const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -301,20 +283,12 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     }
   }
 
-  // Always sets an explicit target state (never "toggle, whatever that means
-  // right now") so two near-simultaneous calls converge on the same answer
-  // instead of racing each other into an unpredictable end state.
-  function setFullscreen(enabled: boolean) {
-    isFullscreen = enabled;
-    if (options.onSetFullscreen) {
-      options.onSetFullscreen(enabled);
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      host.requestFullscreen?.().catch(() => void 0);
     } else {
-      // Fallback for environments without window-level control (e.g. the
-      // Tampermonkey userscript): page-level Fullscreen API.
-      if (enabled) host.requestFullscreen?.().catch(() => void 0);
-      else document.exitFullscreen?.().catch(() => void 0);
+      document.exitFullscreen?.().catch(() => void 0);
     }
-    applySettingsToDom();
   }
 
   // Wire up controls.
@@ -358,21 +332,9 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     persistSettings();
   }
 
-  // Manual button: just flips the current fullscreen state, same as F11,
-  // without touching the "auto fullscreen" preference.
-  els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
-
-  // "Auto" button: also acts exactly like F11 immediately when clicked, but
-  // additionally remembers the choice so future chapters/opens follow suit.
-  els.autoFullscreenBtn.addEventListener("click", () => {
-    settings.autoFullscreen = !settings.autoFullscreen;
-    persistSettings();
-    setFullscreen(settings.autoFullscreen);
-  });
-
+  els.fullscreenBtn.addEventListener("click", toggleFullscreen);
   els.hudToggleBtn.addEventListener("click", toggleHud);
   document.addEventListener("keydown", onKeyDown);
-  document.addEventListener("fullscreenchange", onFullscreenChange);
 
   function toggleHud() {
     settings.hudHidden = !settings.hudHidden;
@@ -381,18 +343,6 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
   }
 
   render();
-
-  // Seed the real fullscreen state (in case the window was already
-  // fullscreen from a previous chapter, or toggled manually outside the
-  // reader), then honor the "auto fullscreen" preference if it's on and
-  // we're not fullscreen yet.
-  if (options.onGetFullscreenState) {
-    isFullscreen = await options.onGetFullscreenState();
-  } else {
-    isFullscreen = Boolean(document.fullscreenElement);
-  }
-  applySettingsToDom();
-  if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -420,7 +370,6 @@ function buildTemplate(): string {
           <button class="mr-btn mr-zoom-in" title="Aumentar zoom">+</button>
           <button class="mr-btn mr-dark" title="Alternar tema"></button>
           <button class="mr-btn mr-fullscreen" title="Tela cheia (F)">⛶</button>
-          <button class="mr-btn mr-auto-fullscreen" title="Entrar em tela cheia automaticamente ao abrir/trocar de capítulo">⛶ Auto</button>
           <button class="mr-btn mr-close" title="Fechar (Esc)">✕</button>
         </div>
       </header>
