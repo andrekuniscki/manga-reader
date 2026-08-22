@@ -1188,7 +1188,12 @@
   var PRELOAD_AHEAD = 3;
   var EYE_OPEN_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAAC4ElEQVR4nO2Y32vPURjHX7NNC/ObFil3wxab/AGU4sLPC7mYH1vNDbnyIxeSwtWE/Cr5UdsKJYrSyG9S3Ci0UrJyqRjhAttMz3q+9ez0Mc9Z332/Ls6rTn06n/N+zvP5nuc85zlfSCQSiUQiwWxgE3ASuAu8A7qBXm3y/Ba4AxwHGoBZxXZ6JrAXeAn0D7O9APYAVYV0vAa4pL9sf57aL6ANmDOSjk8DzgJ9GQ78AG4B+4AVwFxgElAKlOmzfPgqYL+G0s8MO/KjnAYm59v5tcDHjAklfJqAymHYnAA0A50Zdj8AK/PheJluunCC+8DSfEwAlADLgccZ8xzRVRwWlbrU1qBkk0ZGhhJgC/AlmLMDGBNrbDzwNDB0s0DZYgZwO5j7ETDOa2C05nJr4IxzKUt1v0hGeQN81ybPrcAaYJQzdM8HPkiSKPd8wLlAKJnFwxLgtSNlvgIWO0PqQKCVDDUkDYGgxen8dqAnIu/3qMbDsUC7/m8DJb4/B0vmCZvGYIJPmuvrgbHa6rWvOxi72RlONqTFxvSsgRfNoC49fP5FtR5iOd09YMoQ46fqGHsAVjvmEZvvjU722CAWAL/NANmIHq4ZzTOgwqGRMc+N7qpzrnVGI9VArX15xbx84DRYZcoKKQHm4afG1FJ9EenZHnaXbd7NbUBZhYVOY83BYROLaHJ6seVhUVAADnz4LtP5MMKBFqMTG7HYeQ9H6Owq7JCOJ6YjpkxoNbqN8f6zwejbI3RNRicfM3BS5uJYsoSXE8bQtnj/2Wr0cpOLKetz++ebdBwEvuqpF8Nu48AF4hFNTi+2Yjikzsf6PIi64HCR+t7LxOBQq6NI2MuIhJSXU0bXSRFZHZQGOyOzT79eM4tKe+DQdWB+xjg57W8EY9v4D6jIuLnl6qkObV0Z70XjKT0KglSMR51/tfTqXVc0/x01GlK2LLeZqi2yZioa5VotLtNW670OJhKJRCKRSFA4/gDT2VWv7Gda2QAAAABJRU5ErkJggg==";
   var EYE_CLOSED_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAAC0klEQVR4nO2ZW4hOURTHf8a4DeJzSXKfUHhAPIjyrlwyHjEpHniapIxiJE0zoiZyad48KAopl8i9GB7cby/kgXEZxpMazAwZrVqnVrvzfX37zDnnQ+dXu9mds/d/rb3P3vtbew1kZGRk/A+MBaqBJuAy8Ar4AnQBnVqXZ5eAfcBqYEypnRYHaoEnwG+gx7NIn4fAFmBUmo5PBY7p7PbEVDqBo8CUJB3PAc3AzzwOXAPqgJXADGAk0B8YoDMsz6qAncDNPBPQBRwChsXt/DLgQ4jB28BaYHAEzaHAOuBuiO47YEkcjvcF9oSs8RZgMfGxQL+gu0fEdllU0QrgoiP6EVhOcqwC2hybZ4FBvkLS4XqIkOyDpBkBXHBsX/EdxBlHoL43nzICZUCj48NJH4GvpuNWSsc248c3n47rgQfAJkrPRuCp/s3IyMjISI864AdwhNLRrKG6hODetJmocBrpM91EwRJEenPa/IzvJn3qjf1TUQRWGIH3Gl6nxRCd9cC+XKi86aeO24g0LRqN3Vb1JRLVRkg29BySZ55u3MDumt6I9QHuO7MhOaCkGO/cve+pD5GRLEKHc7GQ0HYc8TMReOHY6tBrpjcy6u0FElaSNZgbo/Pz82Q9gmN8h++XaHJEXupJ0GqedevG9r5wGyo089BtdN8CS9Wm9UF8KprPpuNVc5mXz/zcEX6j6cHhnhd3uaraCZHyDJigbXJqO3j3yWcANSq+Fyh33smMHw5ZXrJezwGbgYXAJJ1hSXpNBhbpQCXj8D1kmRwEBjq2ytWHVvUpNmblSTFGLb+A2aSIzRndAU6EnFaFirQ9rn2DZzfScr7K2ciStEWXixx5DcB5oN20a9fl1aD9g7BkprOB5V3iPDYG9xdot8u0k3o+Dph2j0iBFnMq5GIYQE61pN0tUmA0sKGIf0YUOwChUjVF+6+h1gxA6v8clcBrLVLPyMggfv4AoXhKfSx0ZrcAAAAASUVORK5CYII=";
+  var activeReaderCleanup = null;
   async function openReader(chapter, options = {}) {
+    if (activeReaderCleanup) {
+      activeReaderCleanup();
+      activeReaderCleanup = null;
+    }
     const existing = document.getElementById(HOST_ID);
     if (existing) existing.remove();
     const host = document.createElement("div");
@@ -1198,6 +1203,7 @@
     const settings = await getSettings();
     const savedProgress = await getProgress(chapter.chapterKey);
     let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
+    let isFullscreen = false;
     shadow.innerHTML = buildTemplate();
     const styleEl = document.createElement("style");
     styleEl.textContent = CSS;
@@ -1255,6 +1261,8 @@
       els.darkBtn.textContent = settings.darkMode ? "\u{1F319}" : "\u2600\uFE0F";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
       els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
+      els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
+      els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
       els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
       els.autoFullscreenBtn.title = settings.autoFullscreen ? "Tela cheia autom\xE1tica: ativada (clique para desativar)" : "Tela cheia autom\xE1tica: desativada (clique para ativar)";
       els.root.classList.toggle("mr-hud-hidden", settings.hudHidden);
@@ -1387,12 +1395,20 @@
     }
     function closeReader() {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
       if (continuousObserver) continuousObserver.disconnect();
       host.remove();
+      if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
+    }
+    activeReaderCleanup = closeReader;
+    function onFullscreenChange() {
+      isFullscreen = Boolean(document.fullscreenElement);
+      applySettingsToDom();
     }
     function onKeyDown(e) {
+      if (e.repeat) return;
       if (e.key === "Escape") return closeReader();
-      if (e.key === "f" || e.key === "F") return toggleFullscreen();
+      if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
       if (e.key === "h" || e.key === "H") return toggleHud();
       if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -1405,16 +1421,15 @@
         prevPage();
       }
     }
-    function toggleFullscreen() {
-      if (options.onToggleFullscreen) {
-        options.onToggleFullscreen();
-        return;
-      }
-      if (!document.fullscreenElement) {
-        host.requestFullscreen?.().catch(() => void 0);
+    function setFullscreen(enabled) {
+      isFullscreen = enabled;
+      if (options.onSetFullscreen) {
+        options.onSetFullscreen(enabled);
       } else {
-        document.exitFullscreen?.().catch(() => void 0);
+        if (enabled) host.requestFullscreen?.().catch(() => void 0);
+        else document.exitFullscreen?.().catch(() => void 0);
       }
+      applySettingsToDom();
     }
     els.closeBtn.addEventListener("click", closeReader);
     els.nextPageBtn.addEventListener("click", nextPage);
@@ -1453,30 +1468,28 @@
       applySettingsToDom();
       persistSettings();
     }
-    els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+    els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
     els.autoFullscreenBtn.addEventListener("click", () => {
       settings.autoFullscreen = !settings.autoFullscreen;
-      applySettingsToDom();
       persistSettings();
-      if (settings.autoFullscreen) tryEnterFullscreen();
+      setFullscreen(settings.autoFullscreen);
     });
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
-    function tryEnterFullscreen() {
-      if (options.onEnsureFullscreen) {
-        options.onEnsureFullscreen();
-        return;
-      }
-      if (document.fullscreenElement) return;
-      host.requestFullscreen?.().catch(() => void 0);
-    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
     function toggleHud() {
       settings.hudHidden = !settings.hudHidden;
       applySettingsToDom();
       persistSettings();
     }
     render();
-    if (settings.autoFullscreen) tryEnterFullscreen();
+    if (options.onGetFullscreenState) {
+      isFullscreen = await options.onGetFullscreenState();
+    } else {
+      isFullscreen = Boolean(document.fullscreenElement);
+    }
+    applySettingsToDom();
+    if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
   }
   function clamp(n, min, max) {
     return Math.min(max, Math.max(min, n));
@@ -1603,33 +1616,43 @@
 `;
 
   // src/content.ts
-  async function handleActivate() {
-    const chapter = parseChapter(document, window.location.href);
-    if (!chapter) {
-      alert(
-        "Manga Reader: n\xE3o consegui identificar as p\xE1ginas do mang\xE1 nesta p\xE1gina.\nTente abrir diretamente a p\xE1gina do cap\xEDtulo (n\xE3o a p\xE1gina inicial do site)."
-      );
-      return;
+  var GUARD_KEY = "__mangaReaderContentLoaded";
+  if (window[GUARD_KEY]) {
+  } else {
+    window[GUARD_KEY] = true;
+    async function handleActivate() {
+      const chapter = parseChapter(document, window.location.href);
+      if (!chapter) {
+        alert(
+          "Manga Reader: n\xE3o consegui identificar as p\xE1ginas do mang\xE1 nesta p\xE1gina.\nTente abrir diretamente a p\xE1gina do cap\xEDtulo (n\xE3o a p\xE1gina inicial do site)."
+        );
+        return;
+      }
+      await openReader(chapter, {
+        onNavigate: (url) => {
+          import_webextension_polyfill2.default.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
+            window.location.href = url;
+          });
+        },
+        onGetFullscreenState: async () => {
+          try {
+            const result = await import_webextension_polyfill2.default.runtime.sendMessage({ type: "GET_WINDOW_FULLSCREEN" });
+            return Boolean(result);
+          } catch {
+            return false;
+          }
+        },
+        onSetFullscreen: (enabled) => {
+          import_webextension_polyfill2.default.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled }).catch(() => void 0);
+        }
+      });
     }
-    await openReader(chapter, {
-      onNavigate: (url) => {
-        import_webextension_polyfill2.default.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
-          window.location.href = url;
-        });
-      },
-      onToggleFullscreen: () => {
-        import_webextension_polyfill2.default.runtime.sendMessage({ type: "TOGGLE_WINDOW_FULLSCREEN" }).catch(() => void 0);
-      },
-      onEnsureFullscreen: () => {
-        import_webextension_polyfill2.default.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled: true }).catch(() => void 0);
+    import_webextension_polyfill2.default.runtime.onMessage.addListener((message) => {
+      const msg = message;
+      if (msg?.type === "ACTIVATE_READER") {
+        handleActivate();
       }
     });
   }
-  import_webextension_polyfill2.default.runtime.onMessage.addListener((message) => {
-    const msg = message;
-    if (msg?.type === "ACTIVATE_READER") {
-      handleActivate();
-    }
-  });
 })();
 //# sourceMappingURL=content.js.map

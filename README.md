@@ -19,6 +19,24 @@ para maior confiabilidade (já incluído um para blood-on-the-tracks.com).
 > Extensões temporárias são removidas quando o Firefox fecha. Para algo
 > permanente, veja "Empacotar/assinar" mais abaixo.
 
+## Como testar no Chrome, Helium ou outro navegador baseado em Chromium
+
+O `manifest.json` agora declara `background.service_worker` (lido pelo
+Chromium) *e* `background.scripts` (lido pelo Firefox), então o mesmo pacote
+funciona nos dois. Helium é baseado em Chromium e usa as mesmas páginas
+internas do Chrome.
+
+1. Abra `chrome://extensions` (funciona também no Helium).
+2. Ative **"Modo do desenvolvedor"** (canto superior direito).
+3. Clique em **"Carregar sem compactação"** ("Load unpacked").
+4. Selecione a pasta `manga-reader/` (a que contém `manifest.json`).
+5. O ícone da extensão aparece na barra de ferramentas — permanece instalado
+   entre reinícios do navegador (diferente do modo temporário do Firefox).
+
+> Se editar o código-fonte em `src/`, rode `npm run build` de novo antes de
+> clicar em "Recarregar" na página de extensões — o navegador lê os arquivos
+> já compilados em `dist/` e `popup/popup.js`, não os `.ts`.
+
 ## Como usar
 
 1. Vá até a página do capítulo (ex.:
@@ -44,7 +62,7 @@ persistem entre sessões.
 
 ```
 manga-reader/
-├── manifest.json          # Manifest V3 (Firefox)
+├── manifest.json          # Manifest V3 (Firefox + Chromium/Helium)
 ├── src/
 │   ├── background.ts      # injeta o content script sob demanda, abre URLs
 │   ├── content.ts          # ponto de entrada injetado na aba do capítulo
@@ -84,9 +102,6 @@ npm run watch        # recompila automaticamente a cada mudança
 
 ## Próximos passos sugeridos
 
-- Portar para Chrome (trocar `background.scripts` por `background.service_worker`
-  em um manifest separado — o restante do código já é compatível via
-  `webextension-polyfill`).
 - Botão flutuante opcional que auto-detecta páginas de mangá sem precisar
   abrir o popup.
 - Publicar/assinar no addons.mozilla.org para instalação permanente sem

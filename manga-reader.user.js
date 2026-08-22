@@ -307,7 +307,18 @@
     .mr-hud-hidden .mr-bottombar { display: none; }
   `;
 
+  // If openReader() runs more than once on the same page (e.g. the floating
+  // button gets tapped again while the reader is already open), only the
+  // newest instance should have live listeners — otherwise two keydown
+  // handlers can both react to a single "F" press and race each other.
+  let activeReaderCleanup = null;
+
   function openReader(chapter) {
+    if (activeReaderCleanup) {
+      activeReaderCleanup();
+      activeReaderCleanup = null;
+    }
+
     const existing = document.getElementById(HOST_ID);
     if (existing) existing.remove();
 
@@ -319,6 +330,7 @@
     const settings = getSettings();
     const savedProgress = getProgress(chapter.chapterKey);
     let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
+    let isFullscreen = Boolean(document.fullscreenElement);
 
     shadow.innerHTML = buildTemplate();
     const styleEl = document.createElement("style");
@@ -370,6 +382,8 @@
       els.rtlBtn.classList.toggle("mr-active", settings.rtl);
       els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
       els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
+      els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
+      els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
       els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
       els.autoFullscreenBtn.title = settings.autoFullscreen
         ? "Tela cheia automática: ativada (clique para desativar)"
@@ -523,13 +537,22 @@
 
     function closeReader() {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
       if (observer) observer.disconnect();
       host.remove();
+      if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
+    }
+    activeReaderCleanup = closeReader;
+
+    function onFullscreenChange() {
+      isFullscreen = Boolean(document.fullscreenElement);
+      applySettingsToDom();
     }
 
     function onKeyDown(e) {
+      if (e.repeat) return; // ignore key-repeat while held
       if (e.key === "Escape") return closeReader();
-      if (e.key === "f" || e.key === "F") return toggleFullscreen();
+      if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
       if (e.key === "h" || e.key === "H") return toggleHud();
       if (settings.mode === "continuous") return;
       const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -543,9 +566,13 @@
       }
     }
 
-    function toggleFullscreen() {
-      if (!document.fullscreenElement) host.requestFullscreen?.().catch(() => {});
+    // Explicit target state (never "toggle, whatever that means right now")
+    // so two near-simultaneous calls converge instead of racing.
+    function setFullscreen(enabled) {
+      isFullscreen = enabled;
+      if (enabled) host.requestFullscreen?.().catch(() => {});
       else document.exitFullscreen?.().catch(() => {});
+      applySettingsToDom();
     }
 
     els.closeBtn.addEventListener("click", closeReader);
@@ -587,24 +614,24 @@
       persistSettings();
     }
 
-    function tryEnterFullscreen() {
-      if (document.fullscreenElement) return;
-      // Best-effort: browsers require a user gesture for the Fullscreen API,
-      // and Tampermonkey has no window-level fullscreen API to fall back on
-      // (unlike the desktop extension), so this can silently fail right
-      // after a chapter change. The toolbar button always works manually.
-      host.requestFullscreen?.().catch(() => {});
-    }
+    // Manual button: flips current fullscreen state, same as F11, without
+    // touching the "auto fullscreen" preference.
+    els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
 
-    els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+    // "Auto" button: also acts exactly like F11 immediately when clicked,
+    // but additionally remembers the choice for future chapters/opens.
+    // (On mobile there's no window-level fullscreen API, so re-entry after
+    // a chapter change may still be blocked by the browser's fullscreen
+    // permission rules — the button always works as a manual fallback.)
     els.autoFullscreenBtn.addEventListener("click", () => {
       settings.autoFullscreen = !settings.autoFullscreen;
-      applySettingsToDom();
       persistSettings();
-      if (settings.autoFullscreen) tryEnterFullscreen();
+      setFullscreen(settings.autoFullscreen);
     });
+
     els.hudToggleBtn.addEventListener("click", toggleHud);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
 
     function toggleHud() {
       settings.hudHidden = !settings.hudHidden;
@@ -614,7 +641,7 @@
 
     applySettingsToDom();
     render();
-    if (settings.autoFullscreen) tryEnterFullscreen();
+    if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
   }
 
   /* ------------------------------------------------------------------ *

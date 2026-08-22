@@ -1033,39 +1033,45 @@
     }
   });
   import_webextension_polyfill.default.tabs.onRemoved.addListener((tabId) => pendingAutoActivate.delete(tabId));
+  var fullscreenLocks = /* @__PURE__ */ new Map();
+  function setWindowFullscreen(windowId, enabled) {
+    const prev = fullscreenLocks.get(windowId) || Promise.resolve();
+    const next = prev.catch(() => void 0).then(() => import_webextension_polyfill.default.windows.update(windowId, { state: enabled ? "fullscreen" : "normal" }));
+    fullscreenLocks.set(windowId, next);
+    return next.then(() => void 0);
+  }
   import_webextension_polyfill.default.runtime.onMessage.addListener(async (message, sender) => {
     const msg = message;
     if (msg?.type === "ACTIVATE_CURRENT_TAB") {
       const [tab] = await import_webextension_polyfill.default.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) await injectAndActivate(tab.id);
-      return;
+      return void 0;
     }
     if (msg?.type === "OPEN_URL_IN_READER") {
       const tab = await import_webextension_polyfill.default.tabs.create({ url: msg.url });
       if (tab.id) pendingAutoActivate.add(tab.id);
-      return;
+      return void 0;
     }
     if (msg?.type === "NAVIGATE_CHAPTER") {
       const tabId = sender.tab?.id;
-      if (tabId === void 0) return;
+      if (tabId === void 0) return void 0;
       pendingAutoActivate.add(tabId);
       await import_webextension_polyfill.default.tabs.update(tabId, { url: msg.url });
-      return;
+      return void 0;
     }
-    if (msg?.type === "TOGGLE_WINDOW_FULLSCREEN") {
+    if (msg?.type === "GET_WINDOW_FULLSCREEN") {
       const windowId = sender.tab?.windowId;
-      if (windowId === void 0) return;
+      if (windowId === void 0) return false;
       const win = await import_webextension_polyfill.default.windows.get(windowId);
-      const next = win.state === "fullscreen" ? "normal" : "fullscreen";
-      await import_webextension_polyfill.default.windows.update(windowId, { state: next });
-      return;
+      return win.state === "fullscreen";
     }
     if (msg?.type === "SET_WINDOW_FULLSCREEN") {
       const windowId = sender.tab?.windowId;
-      if (windowId === void 0) return;
-      await import_webextension_polyfill.default.windows.update(windowId, { state: msg.enabled ? "fullscreen" : "normal" });
-      return;
+      if (windowId === void 0) return void 0;
+      await setWindowFullscreen(windowId, msg.enabled);
+      return void 0;
     }
+    return void 0;
   });
 })();
 //# sourceMappingURL=background.js.map

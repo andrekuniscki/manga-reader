@@ -4,38 +4,56 @@ import { openReader } from "./reader";
 
 type ActivateMessage = { type: "ACTIVATE_READER" };
 
-async function handleActivate() {
-  const chapter = parseChapter(document, window.location.href);
-  if (!chapter) {
-    alert(
-      "Manga Reader: não consegui identificar as páginas do mangá nesta página.\n" +
-        "Tente abrir diretamente a página do capítulo (não a página inicial do site)."
-    );
-    return;
+// scripting.executeScript can end up injecting this file more than once into
+// the same document (e.g. clicking the popup's "open reader" button again
+// while it's already active). Without this guard that would register a
+// second onMessage listener and a second reader instance side by side,
+// which is exactly what caused the fullscreen button to misfire — two
+// listeners both reacting to one keypress/click and racing each other.
+const GUARD_KEY = "__mangaReaderContentLoaded";
+if ((window as unknown as Record<string, boolean>)[GUARD_KEY]) {
+  // Already loaded in this document; do nothing on this second injection.
+} else {
+  (window as unknown as Record<string, boolean>)[GUARD_KEY] = true;
+
+  async function handleActivate() {
+    const chapter = parseChapter(document, window.location.href);
+    if (!chapter) {
+      alert(
+        "Manga Reader: não consegui identificar as páginas do mangá nesta página.\n" +
+          "Tente abrir diretamente a página do capítulo (não a página inicial do site)."
+      );
+      return;
+    }
+    await openReader(chapter, {
+      onNavigate: (url) => {
+        // Let the background script drive the navigation: it watches for the
+        // new page to finish loading and reopens the reader automatically,
+        // so chapter-to-chapter reading never drops back to the raw page.
+        browser.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
+          window.location.href = url; // fallback if messaging fails for any reason
+        });
+      },
+      onGetFullscreenState: async () => {
+        try {
+          const result = await browser.runtime.sendMessage({ type: "GET_WINDOW_FULLSCREEN" });
+          return Boolean(result);
+        } catch {
+          return false;
+        }
+      },
+      onSetFullscreen: (enabled) => {
+        // Real browser-window fullscreen (background.ts), not the page-level
+        // Fullscreen API — it survives chapter navigation automatically.
+        browser.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled }).catch(() => void 0);
+      },
+    });
   }
-  await openReader(chapter, {
-    onNavigate: (url) => {
-      // Let the background script drive the navigation: it watches for the
-      // new page to finish loading and reopens the reader automatically,
-      // so chapter-to-chapter reading never drops back to the raw page.
-      browser.runtime.sendMessage({ type: "NAVIGATE_CHAPTER", url }).catch(() => {
-        window.location.href = url; // fallback if messaging fails for any reason
-      });
-    },
-    onToggleFullscreen: () => {
-      // Real browser-window fullscreen (background.ts), not the page-level
-      // Fullscreen API — it survives chapter navigation automatically.
-      browser.runtime.sendMessage({ type: "TOGGLE_WINDOW_FULLSCREEN" }).catch(() => void 0);
-    },
-    onEnsureFullscreen: () => {
-      browser.runtime.sendMessage({ type: "SET_WINDOW_FULLSCREEN", enabled: true }).catch(() => void 0);
-    },
+
+  browser.runtime.onMessage.addListener((message: unknown) => {
+    const msg = message as ActivateMessage;
+    if (msg?.type === "ACTIVATE_READER") {
+      handleActivate();
+    }
   });
 }
-
-browser.runtime.onMessage.addListener((message: unknown) => {
-  const msg = message as ActivateMessage;
-  if (msg?.type === "ACTIVATE_READER") {
-    handleActivate();
-  }
-});

@@ -13,14 +13,29 @@ const EYE_CLOSED_ICON =
 export interface ReaderOptions {
   /** Called instead of window.location.href when moving to another chapter. */
   onNavigate?: (url: string) => void;
-  /** Called on F key / fullscreen button click. Falls back to Element Fullscreen if omitted. */
-  onToggleFullscreen?: () => void;
-  /** Called when the reader opens with "auto fullscreen" enabled. Falls back to Element Fullscreen if omitted. */
-  onEnsureFullscreen?: () => void;
+  /** Returns whether the browser window is currently fullscreen. Falls back to Element Fullscreen state if omitted. */
+  onGetFullscreenState?: () => Promise<boolean>;
+  /** Explicitly enter (true) or exit (false) fullscreen. Falls back to Element Fullscreen if omitted. */
+  onSetFullscreen?: (enabled: boolean) => void;
 }
 
+// If the reader gets opened more than once in the same document (e.g. the
+// content script is injected twice, or two activation messages arrive close
+// together), only the latest instance should have live listeners — otherwise
+// two keydown handlers can both react to a single "F" press and race each
+// other, which is what made the fullscreen button misbehave. This holds a
+// cleanup function for whichever reader instance is currently active.
+let activeReaderCleanup: (() => void) | null = null;
+
 export async function openReader(chapter: ParsedChapter, options: ReaderOptions = {}): Promise<void> {
-  // Avoid double-mounting if the popup is triggered twice.
+  // Tear down any previously-active reader instance first (see comment on
+  // activeReaderCleanup above) — this is what actually guarantees only one
+  // set of keydown/click listeners is ever live at a time.
+  if (activeReaderCleanup) {
+    activeReaderCleanup();
+    activeReaderCleanup = null;
+  }
+
   const existing = document.getElementById(HOST_ID);
   if (existing) existing.remove();
 
@@ -32,6 +47,7 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
   const settings = await getSettings();
   const savedProgress = await getProgress(chapter.chapterKey);
   let currentPage = clamp(savedProgress?.page ?? 0, 0, chapter.images.length - 1);
+  let isFullscreen = false;
 
   shadow.innerHTML = buildTemplate();
   const styleEl = document.createElement("style");
@@ -96,6 +112,8 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     els.darkBtn.textContent = settings.darkMode ? "🌙" : "☀️";
     els.fitBtn.classList.toggle("mr-active", settings.fitWidth);
     els.zoomLabel.textContent = `${Math.round(settings.zoom * 100)}%`;
+    els.fullscreenBtn.classList.toggle("mr-active", isFullscreen);
+    els.fullscreenBtn.title = isFullscreen ? "Sair da tela cheia (F)" : "Entrar em tela cheia (F)";
     els.autoFullscreenBtn.classList.toggle("mr-active", settings.autoFullscreen);
     els.autoFullscreenBtn.title = settings.autoFullscreen
       ? "Tela cheia automática: ativada (clique para desativar)"
@@ -254,13 +272,22 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
 
   function closeReader() {
     document.removeEventListener("keydown", onKeyDown);
+    document.removeEventListener("fullscreenchange", onFullscreenChange);
     if (continuousObserver) continuousObserver.disconnect();
     host.remove();
+    if (activeReaderCleanup === closeReader) activeReaderCleanup = null;
+  }
+  activeReaderCleanup = closeReader;
+
+  function onFullscreenChange() {
+    isFullscreen = Boolean(document.fullscreenElement);
+    applySettingsToDom();
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    if (e.repeat) return; // ignore key-repeat while held, which was firing rapid duplicate toggles
     if (e.key === "Escape") return closeReader();
-    if (e.key === "f" || e.key === "F") return toggleFullscreen();
+    if (e.key === "f" || e.key === "F") return setFullscreen(!isFullscreen);
     if (e.key === "h" || e.key === "H") return toggleHud();
     if (settings.mode === "continuous") return; // arrow paging doesn't apply to continuous scroll
     const goForward = settings.rtl ? "ArrowLeft" : "ArrowRight";
@@ -274,16 +301,20 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     }
   }
 
-  function toggleFullscreen() {
-    if (options.onToggleFullscreen) {
-      options.onToggleFullscreen();
-      return;
-    }
-    if (!document.fullscreenElement) {
-      host.requestFullscreen?.().catch(() => void 0);
+  // Always sets an explicit target state (never "toggle, whatever that means
+  // right now") so two near-simultaneous calls converge on the same answer
+  // instead of racing each other into an unpredictable end state.
+  function setFullscreen(enabled: boolean) {
+    isFullscreen = enabled;
+    if (options.onSetFullscreen) {
+      options.onSetFullscreen(enabled);
     } else {
-      document.exitFullscreen?.().catch(() => void 0);
+      // Fallback for environments without window-level control (e.g. the
+      // Tampermonkey userscript): page-level Fullscreen API.
+      if (enabled) host.requestFullscreen?.().catch(() => void 0);
+      else document.exitFullscreen?.().catch(() => void 0);
     }
+    applySettingsToDom();
   }
 
   // Wire up controls.
@@ -327,28 +358,21 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
     persistSettings();
   }
 
-  els.fullscreenBtn.addEventListener("click", toggleFullscreen);
+  // Manual button: just flips the current fullscreen state, same as F11,
+  // without touching the "auto fullscreen" preference.
+  els.fullscreenBtn.addEventListener("click", () => setFullscreen(!isFullscreen));
+
+  // "Auto" button: also acts exactly like F11 immediately when clicked, but
+  // additionally remembers the choice so future chapters/opens follow suit.
   els.autoFullscreenBtn.addEventListener("click", () => {
     settings.autoFullscreen = !settings.autoFullscreen;
-    applySettingsToDom();
     persistSettings();
-    if (settings.autoFullscreen) tryEnterFullscreen();
+    setFullscreen(settings.autoFullscreen);
   });
+
   els.hudToggleBtn.addEventListener("click", toggleHud);
   document.addEventListener("keydown", onKeyDown);
-
-  function tryEnterFullscreen() {
-    if (options.onEnsureFullscreen) {
-      options.onEnsureFullscreen();
-      return;
-    }
-    if (document.fullscreenElement) return;
-    // Best-effort: browsers require a user gesture for the Fullscreen API,
-    // and that gesture doesn't carry over across a full page navigation, so
-    // this can silently fail right after a chapter change. When it does,
-    // the toolbar button still works as a one-click fallback.
-    host.requestFullscreen?.().catch(() => void 0);
-  }
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 
   function toggleHud() {
     settings.hudHidden = !settings.hudHidden;
@@ -357,7 +381,18 @@ export async function openReader(chapter: ParsedChapter, options: ReaderOptions 
   }
 
   render();
-  if (settings.autoFullscreen) tryEnterFullscreen();
+
+  // Seed the real fullscreen state (in case the window was already
+  // fullscreen from a previous chapter, or toggled manually outside the
+  // reader), then honor the "auto fullscreen" preference if it's on and
+  // we're not fullscreen yet.
+  if (options.onGetFullscreenState) {
+    isFullscreen = await options.onGetFullscreenState();
+  } else {
+    isFullscreen = Boolean(document.fullscreenElement);
+  }
+  applySettingsToDom();
+  if (settings.autoFullscreen && !isFullscreen) setFullscreen(true);
 }
 
 function clamp(n: number, min: number, max: number): number {

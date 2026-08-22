@@ -5,7 +5,7 @@ const watch = process.argv.includes("--watch");
 const commonOptions = {
   bundle: true,
   sourcemap: true,
-  target: "firefox109",
+  target: ["firefox109", "chrome109"],
   format: "iife",
 };
 

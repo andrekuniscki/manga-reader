@@ -17,6 +17,7 @@
     }
   },
   "background": {
+    "service_worker": "dist/background.js",
     "scripts": ["dist/background.js"]
   },
   "permissions": ["storage", "scripting", "activeTab", "tabs"],
@@ -26,5 +27,6 @@
       "id": "manga-reader@local.extension",
       "strict_min_version": "115.0"
     }
-  }
+  },
+  "minimum_chrome_version": "109"
 }
